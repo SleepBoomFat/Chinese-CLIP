@@ -30,6 +30,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
                     teacher_image_features = output[0]
                 else:
                     teacher_image_features = output
+
     else:
         assert accum_image_features and accum_text_features and accum_idx != -1
         chunk_image_features, chunk_text_features, logit_scale = model(images, texts, args.mask_ratio)
