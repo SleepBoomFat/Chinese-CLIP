@@ -58,9 +58,9 @@ def main():
 
     # Set output path
     time_suffix = strftime("%Y-%m-%d-%H-%M-%S", gmtime())
-    args.log_path = os.path.join(args.logs, args.name, "out_{}.log".format(time_suffix))
+    args.log_path = os.path.join(args.logsfan, args.name, "out_{}.log".format(time_suffix))
 
-    args.checkpoint_path = os.path.join(args.logs, args.name, "checkpoints")
+    args.checkpoint_path = os.path.join(args.logsfan, args.name, "checkpoints")
     if is_master(args):
         for dirname in [args.checkpoint_path]:
             if dirname:
@@ -178,7 +178,7 @@ def main():
     # Log and save hyper-params.
     if is_master(args):
         logging.info("Params:")
-        params_file = os.path.join(args.logs, args.name, "params_{}.txt".format(time_suffix))
+        params_file = os.path.join(args.logsfan, args.name, "params_{}.txt".format(time_suffix))
         with open(params_file, "w", encoding="utf-8") as f:
             for name in sorted(vars(args)):
                 val = getattr(args, name)
@@ -241,7 +241,7 @@ def main():
 
     # determine if this worker should save logs and checkpoints.
     # only do so if it is the 0th worker.
-    args.should_save = (args.logs is not None and args.logs != '' and args.logs.lower() != 'none') and is_master(args)
+    args.should_save = (args.logsfan is not None and args.logsfan != '' and args.logsfan.lower() != 'none') and is_master(args)
 
     # load teacher model to distillation
     if args.distillation:
