@@ -13,14 +13,17 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from cn_clip.clip.model import convert_state_dict
-
+from cn_clip.clip.makeself import MemoryEnhancedMatcher
+from cn_clip.clip.makeself import DynamicMemoryBank
 
 def is_master(args):
     return args.rank == 0
 
 def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features=None, accum_text_features=None, accum_idx=-1, teacher_model=None, teacher_accum_image_features=None):
     if args.accum_freq == 1:
-        image_features, text_features, logit_scale = model(images, texts, args.mask_ratio)
+        memory =   DynamicMemoryBank()
+        matcher = MemoryEnhancedMatcher(memory=memory)
+        image_features, text_features, logit_scale = model(images, texts, args.mask_ratio,matcher)
 
         if args.distillation:
             with torch.no_grad():
