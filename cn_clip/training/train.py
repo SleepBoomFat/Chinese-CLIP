@@ -19,10 +19,8 @@ from cn_clip.clip.makeself import DynamicMemoryBank
 def is_master(args):
     return args.rank == 0
 
-def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features=None, accum_text_features=None, accum_idx=-1, teacher_model=None, teacher_accum_image_features=None):
+def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features=None, accum_text_features=None, accum_idx=-1, teacher_model=None, teacher_accum_image_features=None,matcher: MemoryEnhancedMatcher = None):
     if args.accum_freq == 1:
-        memory =   DynamicMemoryBank()
-        matcher = MemoryEnhancedMatcher(memory=memory)
         image_features, text_features, logit_scale = model(images, texts, args.mask_ratio,matcher)
 
         if args.distillation:
@@ -152,6 +150,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
     loss_img = loss_img.cuda(args.local_device_rank)
     loss_txt = loss_txt.cuda(args.local_device_rank)
 
+    memory = DynamicMemoryBank()
+    matcher = MemoryEnhancedMatcher(memory=memory)
+
     if sampler is not None:
         sampler.set_epoch(epoch)
 
@@ -193,18 +194,18 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
             if args.precision == "amp":
                 with autocast():
                     if args.distillation:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,matcher=matcher)
                     else:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,matcher = matcher)
                     scaler.scale(total_loss).backward()
                     scaler.step(optimizer)
                 scaler.update()
 
             else:
                 if args.distillation:
-                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model)
+                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,matcher = matcher)
                 else:
-                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args)
+                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,matcher = matcher)
                 total_loss.backward()
                 optimizer.step()
         else:
@@ -242,9 +243,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
                     # `total_loss` and `acc` are coarsely sampled, taking only the last result in the loop.
                     # Although each result should be the same in theory, it will be slightly different in practice
                     if args.distillation:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j, teacher_model, teacher_accum_image_features)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j, teacher_model, teacher_accum_image_features,matcher = matcher)
                     else:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j,matcher = matcher)
                 if args.precision == "amp":
                     scaler.scale(total_loss).backward()
                 else:
