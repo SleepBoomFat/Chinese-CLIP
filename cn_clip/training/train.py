@@ -15,13 +15,14 @@ import torch.nn.functional as F
 from cn_clip.clip.model import convert_state_dict
 from cn_clip.clip.makeself import MemoryEnhancedMatcher
 from cn_clip.clip.makeself import DynamicMemoryBank
-
+from cn_clip.clip.makeself import get_new_feat
+from cn_clip.clip.makeself import FeatureFusionNetwork
 def is_master(args):
     return args.rank == 0
 
-def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features=None, accum_text_features=None, accum_idx=-1, teacher_model=None, teacher_accum_image_features=None,matcher: MemoryEnhancedMatcher = None):
+def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features=None, accum_text_features=None, accum_idx=-1, teacher_model=None, teacher_accum_image_features=None,fusion_network=None):
     if args.accum_freq == 1:
-        image_features, text_features, logit_scale = model(images, texts, args.mask_ratio,matcher)
+        image_features, text_features, logit_scale = model(images, texts, args.mask_ratio)
 
         if args.distillation:
             with torch.no_grad():
@@ -107,7 +108,9 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
 
         if args.distillation:
             kd_loss = cosineSimilarityLoss(teacher_image_features, image_features)
-
+    if args.is_memory:
+        m_img_feats,m_text_feats = get_new_feat(image_features,text_features,fusion_network)
+        #logits_per_image = logit_scale * m_img_feats @ m_text_feats.t()
     ground_truth = torch.arange(len(logits_per_image)).long()
     ground_truth = ground_truth.cuda(args.local_device_rank, non_blocking=True)
 
@@ -124,7 +127,6 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
 
     if args.distillation:
         total_loss += kd_loss * args.kd_loss_weight
-
     return total_loss, acc
 
 def freeze_vision_bn(args, model):
@@ -137,7 +139,9 @@ def freeze_vision_bn(args, model):
 
 def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained_steps, teacher_model=None):
     # os.environ["WDS_EPOCH"] = str(epoch)
-
+    fusion_network = FeatureFusionNetwork(512, 1024)
+    fusion_network.to(model.device)
+    fusion_network.train()
     model.train()
     if args.freeze_vision:
         freeze_vision_bn(args, model)
@@ -150,8 +154,6 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
     loss_img = loss_img.cuda(args.local_device_rank)
     loss_txt = loss_txt.cuda(args.local_device_rank)
 
-    memory = DynamicMemoryBank()
-    matcher = MemoryEnhancedMatcher(memory=memory)
 
     if sampler is not None:
         sampler.set_epoch(epoch)
@@ -194,18 +196,18 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
             if args.precision == "amp":
                 with autocast():
                     if args.distillation:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,matcher=matcher)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,fusion_network=fusion_network)
                     else:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,matcher = matcher)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,fusion_network=fusion_network)
                     scaler.scale(total_loss).backward()
                     scaler.step(optimizer)
                 scaler.update()
 
             else:
                 if args.distillation:
-                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,matcher = matcher)
+                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, teacher_model=teacher_model,fusion_network=fusion_network)
                 else:
-                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,matcher = matcher)
+                    total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args,fusion_network=fusion_network)
                 total_loss.backward()
                 optimizer.step()
         else:
@@ -243,9 +245,9 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
                     # `total_loss` and `acc` are coarsely sampled, taking only the last result in the loop.
                     # Although each result should be the same in theory, it will be slightly different in practice
                     if args.distillation:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j, teacher_model, teacher_accum_image_features,matcher = matcher)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j, teacher_model, teacher_accum_image_features,fusion_network=fusion_network)
                     else:
-                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j,matcher = matcher)
+                        total_loss, acc = get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_features, accum_text_features, j,fusion_network=fusion_network)
                 if args.precision == "amp":
                     scaler.scale(total_loss).backward()
                 else:

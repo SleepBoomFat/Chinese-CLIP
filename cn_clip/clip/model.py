@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 from .makeself import MemoryEnhancedMatcher
-
+from .makeself import DynamicMemoryBank
 import importlib.util
 if importlib.util.find_spec('flash_attn'):
     FlashMHA = importlib.import_module('flash_attn.flash_attention').FlashMHA
@@ -399,8 +399,7 @@ class CLIP(nn.Module):
         x = self.bert(text, attention_mask=attn_mask)[0].type(self.dtype) # [batch_size, seq_length, hidden_size]
         return x[:, 0, :] @ self.text_projection
 
-    def forward(self, image, text, mask_ratio=0,
-                 matcher : MemoryEnhancedMatcher = None,):
+    def forward(self, image, text, mask_ratio=0):
         assert image is not None or text is not None, "text and image cannot both be None!"
 
         if image is None:
@@ -413,7 +412,6 @@ class CLIP(nn.Module):
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True) ## 图文特征交互  1.自适应交叉注意力机制
 
-        s_final, logits_per_image, logits_per_text = matcher(image_features,text_features)
 
         return image_features, text_features, self.logit_scale.exp()
 

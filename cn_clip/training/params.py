@@ -16,6 +16,18 @@ def get_default_params(model_name):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--is-memory",
+        action="store_true",
+        default=False,
+        help="open memory or not",
+    )
+    parser.add_argument(
+        "--is-cross-attn",
+        action="store_true",
+        default=False,
+        help="is cross attention or not",
+    )
+    parser.add_argument(
         "--train-data",
         type=str,
         required=True,
