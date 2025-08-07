@@ -131,6 +131,8 @@ def get_new_feat(image_features,text_features,fusion_network):
     enhanced_all_features = torch.cat([e_image_features, e_text_features], dim=1)
     enhanced_all_features = fusion_network(enhanced_all_features)
     output_i, output_t = torch.split(enhanced_all_features, image_features.shape[1], dim=1)
+    output_i = output_i + image_features  # 将原始图像特征与 MLP 输出的图像特征相加
+    output_t = output_t + text_features  # 将原始文本特征与 MLP 输出的文本特征相加
     return output_i,output_t
 
 

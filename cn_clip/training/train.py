@@ -108,9 +108,7 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
 
         if args.distillation:
             kd_loss = cosineSimilarityLoss(teacher_image_features, image_features)
-    if args.is_memory:
-        m_img_feats,m_text_feats = get_new_feat(image_features,text_features,fusion_network)
-        #logits_per_image = logit_scale * m_img_feats @ m_text_feats.t()
+
     ground_truth = torch.arange(len(logits_per_image)).long()
     ground_truth = ground_truth.cuda(args.local_device_rank, non_blocking=True)
 

@@ -90,7 +90,7 @@ def main():
         for k, v in json.load(ft).items():
             model_info[k] = v
     model_info['use_flash_attention'] = args.use_flash_attention
-
+    model_info['use_triple_attention'] = args.use_triple_attention
     model = CLIP(**model_info)
     if args.clip_weight_path is not None:
         assert os.path.exists(args.clip_weight_path), "Pretrained CLIP weight not exists!"

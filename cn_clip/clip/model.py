@@ -20,7 +20,9 @@ from cn_clip.clip import _tokenizer
 from cn_clip.clip.configuration_bert import BertConfig
 from cn_clip.clip.modeling_bert import BertModel
 
-
+from cn_clip.clip.makeself import FeatureFusionNetwork
+from cn_clip.clip.makeself import get_new_feat
+from cn_clip.clip.tripple import TripletAttention
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -213,7 +215,7 @@ class ResidualAttentionBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, use_flash_attention: bool = False):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, use_flash_attention: bool = False, use_triple_attention: bool = False):
         super().__init__()
         self.width = width
         self.layers = layers
@@ -229,7 +231,7 @@ class Transformer(nn.Module):
 
 
 class VisualTransformer(nn.Module):
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, use_flash_attention: bool = False):
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, use_flash_attention: bool = False,use_triple_attention: bool = False):
         super().__init__()
         self.input_resolution = input_resolution
         self.grid_size = (self.input_resolution // patch_size, self.input_resolution // patch_size)
@@ -245,7 +247,9 @@ class VisualTransformer(nn.Module):
 
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
+        self.use_triple_attention = use_triple_attention
 
+        self.triple_attention = TripletAttention()
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
@@ -275,7 +279,8 @@ class VisualTransformer(nn.Module):
         if mask_ratio != 0:
             x = self.random_masking(x, mask_ratio)
         x = self.ln_pre(x)
-
+        if self.use_triple_attention:
+            x = self.triple_attention(x)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -352,6 +357,9 @@ class CLIP(nn.Module):
         )
         self.bert = BertModel(self.bert_config)
 
+
+        self.fusion_network = FeatureFusionNetwork(512, 1024)
+
         self.text_projection = nn.Parameter(torch.empty(text_hidden_size, embed_dim))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -399,7 +407,7 @@ class CLIP(nn.Module):
         x = self.bert(text, attention_mask=attn_mask)[0].type(self.dtype) # [batch_size, seq_length, hidden_size]
         return x[:, 0, :] @ self.text_projection
 
-    def forward(self, image, text, mask_ratio=0):
+    def forward(self, image, text, mask_ratio=0, is_memory=False, is_triple=False):
         assert image is not None or text is not None, "text and image cannot both be None!"
 
         if image is None:
@@ -411,8 +419,8 @@ class CLIP(nn.Module):
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True) ## 图文特征交互  1.自适应交叉注意力机制
-
-
+        if is_memory:
+            fusion_image_features, fusion_text_features = get_new_feat(image_features, text_features, self.fusion_network)
         return image_features, text_features, self.logit_scale.exp()
 
     def get_similarity(self, image, text):
