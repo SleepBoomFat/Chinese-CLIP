@@ -271,6 +271,8 @@ class VisualTransformer(nn.Module):
         return x_masked_add
 
     def forward(self, x: torch.Tensor, mask_ratio: float = 0.0):
+        if self.use_triple_attention:
+            x = self.triple_attention(x)
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
@@ -279,8 +281,6 @@ class VisualTransformer(nn.Module):
         if mask_ratio != 0:
             x = self.random_masking(x, mask_ratio)
         x = self.ln_pre(x)
-        if self.use_triple_attention:
-            x = self.triple_attention(x)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -316,7 +316,7 @@ class CLIP(nn.Module):
                  tokenizer = _tokenizer,
                  # vision head width, added this param for ViT-H
                  vision_head_width: int = 64,
-                 use_flash_attention: bool = False,):
+                 use_flash_attention: bool = False,use_triple_attention: bool = False, is_memory: bool = False,):
         super().__init__()
 
         if isinstance(vision_layers, (tuple, list)):
@@ -337,7 +337,7 @@ class CLIP(nn.Module):
                 layers=vision_layers,
                 heads=vision_heads,
                 output_dim=embed_dim,
-                use_flash_attention=use_flash_attention
+                use_flash_attention=use_flash_attention,use_triple_attention=use_triple_attention
             )
 
         self.bert_config = BertConfig(
@@ -366,6 +366,8 @@ class CLIP(nn.Module):
         self.tokenizer = tokenizer
 
         self.initialize_parameters()
+
+        self.is_memory = is_memory
 
     def initialize_parameters(self):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
@@ -407,7 +409,7 @@ class CLIP(nn.Module):
         x = self.bert(text, attention_mask=attn_mask)[0].type(self.dtype) # [batch_size, seq_length, hidden_size]
         return x[:, 0, :] @ self.text_projection
 
-    def forward(self, image, text, mask_ratio=0, is_memory=False, is_triple=False):
+    def forward(self, image, text, mask_ratio=0):
         assert image is not None or text is not None, "text and image cannot both be None!"
 
         if image is None:
@@ -419,7 +421,7 @@ class CLIP(nn.Module):
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True) ## 图文特征交互  1.自适应交叉注意力机制
-        if is_memory:
+        if self.is_memory:
             fusion_image_features, fusion_text_features = get_new_feat(image_features, text_features, self.fusion_network)
         return image_features, text_features, self.logit_scale.exp()
 

@@ -16,6 +16,12 @@ def get_default_params(model_name):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--use-triple-attention",
+        action="store_true",
+        default=False,
+        help="use triple attention or not",
+    )
+    parser.add_argument(
         "--is-memory",
         action="store_true",
         default=False,

@@ -91,6 +91,7 @@ def main():
             model_info[k] = v
     model_info['use_flash_attention'] = args.use_flash_attention
     model_info['use_triple_attention'] = args.use_triple_attention
+    model_info['is_memory'] = args.is_memory
     model = CLIP(**model_info)
     if args.clip_weight_path is not None:
         assert os.path.exists(args.clip_weight_path), "Pretrained CLIP weight not exists!"
@@ -132,7 +133,7 @@ def main():
     # To make compatible with torch version <= 1.8.0, set find_unused_parameters to True
     # In other cases, set find_unused_parameters to False
     find_unused_parameters = torch_version_str_compare_lessequal(torch.__version__, "1.8.0")
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_device_rank], find_unused_parameters=find_unused_parameters)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_device_rank], find_unused_parameters=True)
     # Have to set this when activating grad checkpointing in Pytorch >= 2.0.0
     if args.grad_checkpointing and not torch_version_str_compare_lessequal(torch.__version__, "1.14.0"):
         model._set_static_graph()
@@ -218,7 +219,7 @@ def main():
             if args.use_flash_attention:
                 sd = convert_state_dict(sd)
             # Load the state dict
-            model.load_state_dict(sd)
+            model.load_state_dict(sd, strict=False)
             # Restore the epoch and steps info, reload the dataset and dataloader for the resume epoch
             if not args.reset_data_offset:
                 start_epoch = checkpoint["epoch"]
