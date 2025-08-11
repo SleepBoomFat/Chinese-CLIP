@@ -113,9 +113,9 @@ def memory_consistency_loss(confidences_pred, labels):
     # labels：历史样本的真实标签（形状：(K,)）
     return F.mse_loss(confidences_pred, labels.float())
 
-class FeatureFusionNetwork(nn.Module):
+class FeatureMemoryNetwork(nn.Module):
     def __init__(self, feature_dim, output_dim):
-        super(FeatureFusionNetwork, self).__init__()
+        super(FeatureMemoryNetwork, self).__init__()
         # MLP定义，用来增强特征
         self.fc1 = nn.Linear(feature_dim * 2, feature_dim * 4)  # 拼接后的特征维度是 feature_dim * 2
         self.fc2 = nn.Linear(feature_dim * 4, output_dim)
@@ -126,15 +126,15 @@ class FeatureFusionNetwork(nn.Module):
         enhanced_features = self.fc2(x)  # (B, output_dim)
         return enhanced_features
 
-def get_new_feat(image_features,text_features,fusion_network):
+def get_memory_feat(image_features,text_features,fusion_network):
     e_image_features,e_text_features = generate_enhanced_features(image_features,text_features,3)
     enhanced_all_features = torch.cat([e_image_features, e_text_features], dim=1)
     enhanced_all_features = fusion_network(enhanced_all_features)
     output_i, output_t = torch.split(enhanced_all_features, image_features.shape[1], dim=1)
-    output_i = output_i + image_features  # 将原始图像特征与 MLP 输出的图像特征相加
-    output_t = output_t + text_features  # 将原始文本特征与 MLP 输出的文本特征相加
     return output_i,output_t
 
+def get_fusion_feat(image_features,text_features,fusion_network):
+    return image_features,text_features
 
 def generate_enhanced_features(image_features, text_features, top_k=3):
     """

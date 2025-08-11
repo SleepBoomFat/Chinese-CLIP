@@ -20,8 +20,9 @@ from cn_clip.clip import _tokenizer
 from cn_clip.clip.configuration_bert import BertConfig
 from cn_clip.clip.modeling_bert import BertModel
 
-from cn_clip.clip.makeself import FeatureFusionNetwork
-from cn_clip.clip.makeself import get_new_feat
+from cn_clip.clip.makeself import FeatureMemoryNetwork
+from cn_clip.clip.makeself import get_memory_feat
+from cn_clip.clip.makeself import get_fusion_feat
 from cn_clip.clip.tripple import TripletAttention
 class Bottleneck(nn.Module):
     expansion = 4
@@ -287,10 +288,12 @@ class VisualTransformer(nn.Module):
 
         x = self.ln_post(x[:, 0, :])
 
+        local_features = x[:, 1:, :]  # 从 [CLS] 后面的部分提取局部特征
+
         if self.proj is not None:
             x = x @ self.proj
 
-        return x
+        return x,local_features
 
 
 class CLIP(nn.Module):
@@ -316,7 +319,7 @@ class CLIP(nn.Module):
                  tokenizer = _tokenizer,
                  # vision head width, added this param for ViT-H
                  vision_head_width: int = 64,
-                 use_flash_attention: bool = False,use_triple_attention: bool = False, is_memory: bool = False,):
+                 use_flash_attention: bool = False,use_triple_attention: bool = False, is_memory: bool = False,is_fusion: bool = False,):
         super().__init__()
 
         if isinstance(vision_layers, (tuple, list)):
@@ -358,7 +361,7 @@ class CLIP(nn.Module):
         self.bert = BertModel(self.bert_config)
 
 
-        self.fusion_network = FeatureFusionNetwork(512, 1024)
+        self.fusion_network = FeatureMemoryNetwork(512, 1024)
 
         self.text_projection = nn.Parameter(torch.empty(text_hidden_size, embed_dim))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
@@ -416,13 +419,16 @@ class CLIP(nn.Module):
             return self.encode_text(text)
         elif text is None:
             return self.encode_image(image)
-        image_features = self.encode_image(image, mask_ratio)
-        text_features = self.encode_text(text)
+        image_features,local_image_features = self.encode_image(image, mask_ratio)
+        text_features,local_text_features = self.encode_text(text)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True) ## 图文特征交互  1.自适应交叉注意力机制
         if self.is_memory:
-            fusion_image_features, fusion_text_features = get_new_feat(image_features, text_features, self.fusion_network)
+            image_features, text_features = get_memory_feat(image_features, text_features, self.fusion_network)
+        if self.is_fusion:
+            image_features, text_features = get_fusion_feat(image_features, text_features, self.fusion_network)
+
         return image_features, text_features, self.logit_scale.exp()
 
     def get_similarity(self, image, text):
