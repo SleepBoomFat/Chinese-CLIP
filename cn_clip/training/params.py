@@ -22,6 +22,12 @@ def parse_args():
         help="use triple attention or not",
     )
     parser.add_argument(
+        "--is-fusion",
+        action="store_true",
+        default=False,
+        help="open memory or not",
+    )
+    parser.add_argument(
         "--is-memory",
         action="store_true",
         default=False,

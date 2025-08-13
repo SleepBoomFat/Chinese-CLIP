@@ -92,6 +92,8 @@ def main():
     model_info['use_flash_attention'] = args.use_flash_attention
     model_info['use_triple_attention'] = args.use_triple_attention
     model_info['is_memory'] = args.is_memory
+    model_info['is_fusion'] = args.is_fusion
+
     model = CLIP(**model_info)
     if args.clip_weight_path is not None:
         assert os.path.exists(args.clip_weight_path), "Pretrained CLIP weight not exists!"
@@ -123,6 +125,8 @@ def main():
     if args.freeze_vision:
         for k, v in model.visual.named_parameters():
             v.requires_grad = False
+        for k, v in model.visual.triple_attention.named_parameters():
+            v.requires_grad = True
         # freeze bn running mean and variance
         if args.vision_model in ['RN50']:
             for m in model.visual.modules():

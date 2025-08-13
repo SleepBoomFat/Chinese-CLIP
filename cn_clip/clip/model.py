@@ -251,6 +251,8 @@ class VisualTransformer(nn.Module):
         self.use_triple_attention = use_triple_attention
 
         self.triple_attention = TripletAttention()
+        #  self.local_proj = nn.Linear(768, output_dim)  # 这里 712 是输入维度，512 是输出维度
+
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
@@ -286,14 +288,15 @@ class VisualTransformer(nn.Module):
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
+        # local_features = x[:, 1:, :]
+        #  local_features = self.local_proj(local_features)
         x = self.ln_post(x[:, 0, :])
 
-        local_features = x[:, 1:, :]  # 从 [CLS] 后面的部分提取局部特征
 
         if self.proj is not None:
             x = x @ self.proj
 
-        return x,local_features
+        return x
 
 
 class CLIP(nn.Module):
@@ -372,6 +375,12 @@ class CLIP(nn.Module):
 
         self.is_memory = is_memory
 
+        self.is_fusion = is_fusion
+
+        self.i_t_cross_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
+
+        self.t_i_cross_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
+
     def initialize_parameters(self):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -419,16 +428,18 @@ class CLIP(nn.Module):
             return self.encode_text(text)
         elif text is None:
             return self.encode_image(image)
-        image_features,local_image_features = self.encode_image(image, mask_ratio)
-        text_features,local_text_features = self.encode_text(text)
+        image_features = self.encode_image(image, mask_ratio)
+        text_features = self.encode_text(text)
 
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True) ## 图文特征交互  1.自适应交叉注意力机制
         if self.is_memory:
             image_features, text_features = get_memory_feat(image_features, text_features, self.fusion_network)
         if self.is_fusion:
-            image_features, text_features = get_fusion_feat(image_features, text_features, self.fusion_network)
-
+            img_feat_new,_ = self.i_t_cross_attn(image_features, text_features, text_features)
+            txt_feat_new,_ = self.t_i_cross_attn(text_features, image_features, image_features)
+            image_features = img_feat_new + image_features
+            text_features = txt_feat_new + text_features
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         return image_features, text_features, self.logit_scale.exp()
 
     def get_similarity(self, image, text):

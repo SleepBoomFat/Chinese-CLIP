@@ -44,7 +44,6 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
                     teacher_chunk_image_features = output
             teacher_image_features = torch.cat(
             teacher_accum_image_features[:accum_idx] + [teacher_chunk_image_features] + teacher_accum_image_features[accum_idx + 1:])
-        
         image_features = torch.cat(
             accum_image_features[:accum_idx] + [chunk_image_features] + accum_image_features[accum_idx + 1:])
         text_features = torch.cat(
@@ -68,7 +67,6 @@ def get_loss(model, images, texts, loss_img, loss_txt, args, accum_image_feature
             gathered_text_features = [
                 torch.zeros_like(text_features) for _ in range(world_size)
             ]
-            
             dist.all_gather(gathered_image_features, image_features)
             dist.all_gather(gathered_text_features, text_features)
 
@@ -326,7 +324,7 @@ def train(model, data, epoch, optimizer, scaler, scheduler, args, global_trained
                 save_path,
             )
             logging.info("Saved checkpoint {} (epoch {} @ {} steps) (writing took {} seconds)".format(save_path, epoch + 1, step + 1, time.time() - t1))
-        
+
     return epoch_trained_steps
 
 
@@ -411,7 +409,7 @@ def cosineSimilarityLoss(feature1, feature2):
                             mode='bilinear',
                             align_corners=False)
     feature2_interpolated = feature2_interpolated.squeeze(0).squeeze(0)
-    
+
 
     cosine_sim = F.cosine_similarity(feature1, feature2_interpolated, dim=1)
     similarity_loss = 1 - cosine_sim.mean()
