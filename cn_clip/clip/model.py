@@ -22,7 +22,6 @@ from cn_clip.clip.modeling_bert import BertModel
 
 from cn_clip.clip.makeself import FeatureMemoryNetwork
 from cn_clip.clip.makeself import get_memory_feat
-from cn_clip.clip.makeself import get_fusion_feat
 from cn_clip.clip.tripple import TripletAttention
 class Bottleneck(nn.Module):
     expansion = 4

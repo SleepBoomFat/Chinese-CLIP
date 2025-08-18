@@ -114,29 +114,28 @@ def memory_consistency_loss(confidences_pred, labels):
     return F.mse_loss(confidences_pred, labels.float())
 
 class FeatureMemoryNetwork(nn.Module):
-    def __init__(self, feature_dim, output_dim):
+    def __init__(self, feature_dim, output_dim, dropout_prob=0.5):
         super(FeatureMemoryNetwork, self).__init__()
         # MLP定义，用来增强特征
         self.fc1 = nn.Linear(feature_dim * 2, feature_dim * 4)  # 拼接后的特征维度是 feature_dim * 2
         self.fc2 = nn.Linear(feature_dim * 4, output_dim)
+        self.dropout = nn.Dropout(dropout_prob)  # 添加 Dropout 层
 
     def forward(self, fused_features):
         # 将加权融合后的特征通过MLP处理
         x = torch.relu(self.fc1(fused_features))  # (B, hidden_dim)
+        x = self.dropout(x)  # 应用 Dropout
         enhanced_features = self.fc2(x)  # (B, output_dim)
         return enhanced_features
 
-def get_memory_feat(image_features,text_features,fusion_network):
-    e_image_features,e_text_features = generate_enhanced_features(image_features,text_features,3)
-    enhanced_all_features = torch.cat([e_image_features, e_text_features], dim=1)
-    enhanced_all_features = fusion_network(enhanced_all_features)
-    output_i, output_t = torch.split(enhanced_all_features, image_features.shape[1], dim=1)
-    return output_i,output_t
+def get_memory_feat(image_features, text_features, fusion_network, top_k=2):
+    e_image_features, e_text_features = generate_enhanced_features(image_features, text_features, top_k)
+    #enhanced_all_features = torch.cat([e_image_features, e_text_features], dim=1)
+    #enhanced_all_features = fusion_network(enhanced_all_features)
+    #output_i, output_t = torch.split(enhanced_all_features, image_features.shape[1], dim=1)
+    return e_image_features, e_text_features
 
-def get_fusion_feat(image_features,text_features,fusion_network):
-    return image_features,text_features
-
-def generate_enhanced_features(image_features, text_features, top_k=3):
+def generate_enhanced_features(image_features, text_features, top_k=2):
     """
     :param image_features: 图像特征，形状 (B, D)
     :param text_features: 文本特征，形状 (B, D)
@@ -165,19 +164,18 @@ def generate_enhanced_features(image_features, text_features, top_k=3):
 
         # 计算加权融合，使用相似度作为加权系数
         weights = similarity_scores[indices]  # (top_k,)
-        weights = F.softmax(weights, dim=0)  # 使用softmax进行归一化
+        weights = torch.sigmoid(weights)  # 使用sigmoid进行归一化，避免过度放大权重
 
         # 加权融合：使用相似度对图像特征和文本特征进行加权相加
         weighted_image_features = torch.sum(similar_image_features * weights.view(-1, 1), dim=0)  # (D,)
         weighted_text_features = torch.sum(similar_text_features * weights.view(-1, 1), dim=0)  # (D,)
 
         # 将加权后的历史特征与当前特征相加
-        fused_image_feature = image_features[i] + weighted_image_features  # (D,)
-        fused_text_feature = text_features[i] + weighted_text_features  # (D,)
+
 
         # 将加权后的图像和文本特征送入MLP进行增强
-        enhanced_image_features.append(fused_image_feature)
-        enhanced_text_features.append(fused_text_feature)
+        enhanced_image_features.append(weighted_image_features)
+        enhanced_text_features.append(weighted_text_features)
 
     # 转换为tensor
     enhanced_image_features = torch.stack(enhanced_image_features)  # (B, D)
