@@ -10,8 +10,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-from .makeself import MemoryEnhancedMatcher
-from .makeself import DynamicMemoryBank
 import importlib.util
 if importlib.util.find_spec('flash_attn'):
     FlashMHA = importlib.import_module('flash_attn.flash_attention').FlashMHA
@@ -431,12 +429,15 @@ class CLIP(nn.Module):
         text_features = self.encode_text(text)
 
         if self.is_memory:
-            image_features, text_features = get_memory_feat(image_features, text_features, self.fusion_network)
+            image_features_m, text_features_m = get_memory_feat(image_features, text_features ,top_k=3)
+            if not self.is_fusion:
+                image_features = image_features_m + image_features
+                text_features = text_features_m + text_features
         if self.is_fusion:
             img_feat_new,_ = self.i_t_cross_attn(image_features, text_features, text_features)
             txt_feat_new,_ = self.t_i_cross_attn(text_features, image_features, image_features)
-            image_features = img_feat_new + image_features
-            text_features = txt_feat_new + text_features
+            image_features = 0.3 * img_feat_new + 0.7 * image_features
+            text_features = 0.3 * txt_feat_new + 0.7 * text_features
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         return image_features, text_features, self.logit_scale.exp()
