@@ -378,6 +378,8 @@ class CLIP(nn.Module):
 
         self.t_i_cross_attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, batch_first=True)
 
+        self.mlp = FeatureFusionMLP(1024,1024,512)
+
     def initialize_parameters(self):
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -436,8 +438,13 @@ class CLIP(nn.Module):
         if self.is_fusion:
             img_feat_new,_ = self.i_t_cross_attn(image_features, text_features, text_features)
             txt_feat_new,_ = self.t_i_cross_attn(text_features, image_features, image_features)
-            image_features = 0.3 * img_feat_new + 0.7 * image_features
-            text_features = 0.3 * txt_feat_new + 0.7 * text_features
+            #image_features = 0.3 * img_feat_new + 0.7 * image_features
+            #text_features = 0.3 * txt_feat_new + 0.7 * text_features
+            fused_image_features = torch.cat([image_features, img_feat_new], dim=-1)  # (B, 2*D)
+            fused_text_features = torch.cat([text_features, txt_feat_new], dim=-1)  # (B, 2*D)
+            # 通过 MLP 融合特征,是否有效待验证
+            image_features = self.mlp(fused_image_features)  # (B, D)
+            text_features = self.mlp(fused_text_features)  # (B, D)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         return image_features, text_features, self.logit_scale.exp()
@@ -458,6 +465,22 @@ class CLIP(nn.Module):
         # shape = [global_batch_size, global_batch_size]
         return logits_per_image, logits_per_text
 
+
+class FeatureFusionMLP(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim=512, dropout_prob=0.5):
+        super(FeatureFusionMLP, self).__init__()
+        # MLP结构，包含两层线性层和ReLU激活
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_prob)
+
+    def forward(self, x):
+        # 经过两层MLP，ReLU激活和Dropout
+        x = self.relu(self.fc1(x))  # 第一层
+        x = self.dropout(x)  # Dropout
+        x = self.fc2(x)  # 第二层
+        return x
 
 def convert_models_to_fp32(model):
     for p in model.parameters():
